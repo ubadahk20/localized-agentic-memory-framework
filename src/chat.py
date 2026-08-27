@@ -40,6 +40,56 @@ def load_history(conn, session_id):
     return [{'role': r,  'content': c} for r, c in rows]
 
 
+modes = [(":search:", "search"), (":deepsearch:", "deepsearch"),
+         (":remember:", "remember"), (":incognito:", "incognito")]
+normal = "chat"
+'''route_message() tells us which mode to use based on the user input prefix'''
+
+
+def route_message(user_input):
+    for prefix, mode in modes:
+        if user_input.startswith(prefix):
+            cleaned_input = user_input.removeprefix(prefix).strip()
+            print(mode, cleaned_input)
+            return mode, cleaned_input
+
+    print(normal, user_input)
+    return normal, user_input
+
+
+def handle_search(cleaned_input):
+    print("search handler called")
+
+
+def handle_deepsearch(cleaned_input):
+    print("deepsearch handler called")
+
+
+def handle_remember(cleaned_input):
+    print("remember handler called")
+
+
+def handle_incognito(cleaned_input):
+    print("incognito handler called")
+
+
+def handle_chat(cleaned_input):
+    print("chat handler called")
+
+
+'''handlers is a dict that calls respective handler func based on mode returned by route_message()'''
+
+handlers = {"search": handle_search, "deepsearch": handle_deepsearch,
+            "remember": handle_remember, "incognito": handle_incognito, "chat": handle_chat}
+
+mode, cleaned_input = route_message(":remember: The Amazing Spiderman")
+handler_func = handlers.get(mode, handle_chat)
+handler_func(cleaned_input)
+
+
+'''main() is the entry point for the chat application '''
+
+
 def main():
     session_id = str(uuid.uuid4())
     conn = get_connection()
