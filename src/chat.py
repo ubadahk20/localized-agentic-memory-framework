@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from ddgs import DDGS
 import trafilatura
+import prompts
 
 DB_PATH = "data/memory.db"
 MODEL = "qwen2.5:1.5b"
@@ -70,17 +71,14 @@ def handle_search(cleaned_input):
     cleaned_result = []
 
     with DDGS() as ddgs:
-        for r in ddgs.text(cleaned_input, max_results=3):
+        for r in ddgs.text(cleaned_input, max_results=10):
             title = r["title"]
             body = r["body"]
             cleaned_result.append(f"{title}: {body}")
     formatted_result = "\n".join(cleaned_result)
+    prompt = prompts.get_search_prompt(cleaned_input, formatted_result)
     response = ollama.chat(model=MODEL, messages=[{"role": "user",
-                                                   "content": f"Instruction: Answer the user's query using only the search results provided below. "
-                                                   f"Be factual, direct, and concise. Do not guess or extrapolate if information is missing.\n\n"
-                                                   f"Query: {cleaned_input}\n\n"
-                                                   f"Search Results:\n---\n{formatted_result}\n---\n\n"
-                                                   f"Answer:"}])
+                                                   "content": prompt}])
 
     reply = response["message"]["content"]
     return reply
@@ -89,21 +87,17 @@ def handle_search(cleaned_input):
 def handle_deepsearch(cleaned_input):
     cleaned_result = []
     with DDGS() as ddgs:
-        for r in ddgs.text(cleaned_input, max_results=3):
+        for r in ddgs.text(cleaned_input, max_results=10):
             url = r["href"]
             downloaded = trafilatura.fetch_url(url)
             result = trafilatura.extract(downloaded)
             if result is not None:
-                shortened_text = result[:1500]
+                shortened_text = result[:1000]
                 cleaned_result.append(f"{shortened_text}")
     formatted_result = "\n".join(cleaned_result)
+    prompt = prompts.get_deepsearch_prompt(cleaned_input, formatted_result)
     response = ollama.chat(model=MODEL, messages=[
-                           {"role": "user", "content": f"Instruction: Summarize the web scraping data below to answer the user's query. "
-                            f"Provide only the TOP most relevant items as a detailed bulleted list. "
-                            f"Do not repeat listings, and do not make up information.\n\n"
-                            f"User Query: {cleaned_input}\n\n"
-                            f"Data:\n====================\n{formatted_result}\n====================\n\n"
-                            f"Top 3 Summary:"}])
+                           {"role": "user", "content": prompt}])
 
     reply = response["message"]["content"]
     return reply
@@ -117,18 +111,14 @@ def handle_incognito(cleaned_input):
     cleaned_result = []
 
     with DDGS() as ddgs:
-        for r in ddgs.text(cleaned_input, max_results=3):
+        for r in ddgs.text(cleaned_input, max_results=10):
             title = r["title"]
             body = r["body"]
             cleaned_result.append(f"{title}: {body}")
     formatted_result = "\n".join(cleaned_result)
+    prompt = prompts.get_incognito_prompt(cleaned_input)
     response = ollama.chat(model=MODEL, messages=[{"role": "user",
-                                                   "content":  f"System Instruction: You are operating in a completely stateless, local environment. "
-                                                   f"Provide a highly direct, raw, and objective answer to the query below. "
-                                                   f"Omit all conversational pleasantries, introductory remarks, and structural disclaimers. "
-                                                   f"Focus entirely on the technical or factual details requested.\n\n"
-                                                   f"Query: {cleaned_input}\n\n"
-                                                   f"Answer:"}])
+                                                   "content": prompt}])
 
     reply = response["message"]["content"]
     return reply
