@@ -6,6 +6,7 @@ from datetime import datetime
 from ddgs import DDGS
 import trafilatura
 import prompts
+import consolidate
 
 DB_PATH = "data/memory.db"
 MODEL = "qwen2.5:1.5b"
@@ -24,9 +25,17 @@ def get_connection():
 
 conn = get_connection()
 
+# the get_unconsolidated_turns() func checks if a perticular
+# text has been consolidated ot not
 
-'''The save_turn() function is a database logger'''
 
+def get_unconsolidated_turns(conn):
+    rows = conn.execute(
+        "SELECT role, content, id FROM conversations WHERE consolidated = 0 ORDER BY id").fetchall()
+    return [{'role': r,  'content': c, 'id': i} for r, c, i in rows]
+
+
+# The save_turn() function is a database logger
 
 def save_turn(conn, session_id, role, content):
     start = time.perf_counter()
@@ -41,8 +50,7 @@ def save_turn(conn, session_id, role, content):
     return elapsed_ms
 
 
-'''load_history() is a database retriever'''
-
+# load_history() is a database retriever
 
 def load_history(conn, session_id):
     rows = conn.execute(
@@ -55,8 +63,9 @@ def load_history(conn, session_id):
 modes = [(":search:", "search"), (":deepsearch:", "deepsearch"),
          (":remember:", "remember"), (":incognito:", "incognito")]
 normal = "chat"
-'''route_message() tells us which mode to use based on the user input prefix'''
 
+
+# route_message() tells us which mode to use based on the user input prefix
 
 def route_message(user_input):
     for prefix, mode in modes:
@@ -65,6 +74,9 @@ def route_message(user_input):
             return mode, cleaned_input
 
     return normal, user_input
+
+# handle_search() is a special handler that fetches the top 10 search
+# results and passes them to the model for processing
 
 
 def handle_search(cleaned_input):
@@ -82,6 +94,9 @@ def handle_search(cleaned_input):
 
     reply = response["message"]["content"]
     return reply
+
+# handle_deepsearch() is a special handler that fetches the full text of
+# the top 10 search results and passes them to the model for processing
 
 
 def handle_deepsearch(cleaned_input):
@@ -106,6 +121,8 @@ def handle_deepsearch(cleaned_input):
 def handle_remember(cleaned_input):
     return f"[No long-term memory system yet — this will query ChromaDB once Module 5 is built. Your query was: '{cleaned_input}']"
 
+# handle_incognito() is a special handler that does not log the conversation to the database
+
 
 def handle_incognito(cleaned_input):
     cleaned_result = []
@@ -123,32 +140,34 @@ def handle_incognito(cleaned_input):
     reply = response["message"]["content"]
     return reply
 
+# handle_chat() is the default handler for normal chat mode
+
 
 def handle_chat(cleaned_input):
 
     history = load_history(conn, session_id)
-    print("--- DEBUG: sending this history ---")
-    print(history)
+    # print("--- DEBUG: sending this history ---")
+    # print(history)
 
     response = ollama.chat(model=MODEL, messages=history)
-    print("--- DEBUG: raw response ---")
-    print(response)
+    # print("--- DEBUG: raw response ---")
+    # print(response)
 
     reply = response["message"]["content"]
     return reply
 
 
-'''handlers is a dict that calls respective handler func
-    based on mode returned by route_message()'''
-
-
-'''main() is the entry point for the chat application '''
-
+# main() is the entry point for the chat application
 
 def main():
 
     print(f'Session started: {session_id}')
     print('Type "exit" to end the session.\n')
+    # print(get_unconsolidated_turns(conn))
+
+    # handlers is a dict that calls respective handler func
+    # based on mode returned by route_message()
+
     handlers = {"search": handle_search, "deepsearch": handle_deepsearch,
                 "remember": handle_remember, "incognito": handle_incognito, "chat": handle_chat}
 
@@ -159,6 +178,7 @@ def main():
     while True:
         user_input = get_user_input()
         if user_input.lower() == "exit":
+            consolidate.trigger_consolidation(conn, session_id)
             break
 
         infer_start = time.perf_counter()

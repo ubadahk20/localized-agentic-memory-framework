@@ -1,3 +1,4 @@
+
 # prompts.py
 
 
@@ -33,4 +34,30 @@ def get_incognito_prompt(cleaned_input):
         f"Focus entirely on the technical or factual details requested.\n\n"
         f"Query: {cleaned_input}\n\n"
         f"Answer:"
+    )
+
+
+def get_facts_prompt(transcript):
+    """Prompt template for fact generation"""
+
+    return (
+        "You are a memory extraction system. You will be given a conversation "
+        "transcript between a user and an AI assistant. Your only job is to extract "
+        "durable, genuinely useful facts about the user — things worth remembering "
+        "in future conversations.\n\n"
+        "STRICT RULES:\n"
+        "- IGNORE greetings, thank-yous, apologies, and small talk entirely.\n"
+        "- IGNORE the assistant explaining its own capabilities or limitations.\n"
+        "- IGNORE facts already obviously known or generic (e.g. 'the user said hi').\n"
+        "- ONLY extract facts that are specific to this user: preferences, personal "
+        "details, decisions, corrections, project details, or stated goals.\n"
+        "- Do NOT invent or infer anything not explicitly stated in the transcript.\n"
+        "- Each fact must be a single, standalone, atomic statement — one idea per fact.\n\n"
+        "OUTPUT FORMAT:\n"
+        "- Output ONLY a list of facts, one per line, each starting with '- '.\n"
+        "- Do NOT include any preamble, explanation, or numbering.\n"
+        "- If there are NO genuinely useful facts in this conversation, output exactly: NO_FACTS\n\n"
+        "- Facts must be about the USER, never about the assistant itself."
+        f"Conversation transcript:\n---\n{transcript}\n---\n\n"
+        "Facts:"
     )

@@ -9,7 +9,7 @@ and semantic deduplication, running entirely on local consumer hardware.
 - [x] Module 1: Local LLM setup (Ollama) + SQLite schema
 - [x] Module 2: Core chat loop with ephemeral buffer
 - [x] Module 3: Keyword routing (:search: / :remember:)
-- [ ] Module 4: Nightly memory consolidation
+- [x] Module 4: Memory consolidation
 - [ ] Module 5: Three-layer semantic deduplication
 - [ ] Module 6: Testing & benchmarking
 
