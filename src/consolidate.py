@@ -2,8 +2,9 @@
 import sqlite3
 import ollama
 import prompts
-import uuid
 import hashlib
+
+
 MODEL = "qwen2.5:1.5b"
 
 DB_PATH = "data/memory.db"
@@ -76,7 +77,7 @@ def hash_converter(fact_list):
 def save_facts(conn, source_session_id, fact_data):
     for reply, hash_value in fact_data:
         existing = conn.execute(
-            "SELECT fact_hash fROM facts WHERE fact_hash = ?", (hash_value,)
+            "SELECT fact_hash FROM facts WHERE fact_hash = ?", (hash_value,)
         ).fetchone()
 
         if existing:
