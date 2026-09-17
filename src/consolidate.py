@@ -6,13 +6,14 @@ import hashlib
 
 
 MODEL = "qwen2.5:1.5b"
-
+"""
 DB_PATH = "data/memory.db"
 
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     return conn
+"""
 
 
 def get_unconsolidated_session_ids(conn):
@@ -141,8 +142,6 @@ def trigger_consolidation(conn, session_id):
             conn, session_id, ids)
         if check_saved_facts(conn, session_id):
             del_raw_conversations(conn, session_id)
-
-    conn.close()
 
 
 if __name__ == "__main__":

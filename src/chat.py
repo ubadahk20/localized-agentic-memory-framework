@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import consolidate
 import router as rtr
+import dedup
 
 DB_PATH = "data/memory.db"
 MODEL = "qwen2.5:1.5b"
@@ -76,6 +77,7 @@ def main():
         user_input = get_user_input()
         if user_input.lower() == "exit":
             consolidate.trigger_consolidation(conn, session_id)
+            dedup.trigger_deduplication(conn)
             break
 
         infer_start = time.perf_counter()
@@ -103,6 +105,8 @@ def main():
 
         print(
             f"  [buffer write: {write_ms:.2f}ms | model inference: {infer_ms:.1f}ms]\n")
+
+    conn.close()
 
 
 if __name__ == "__main__":
