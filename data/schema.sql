@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     role TEXT NOT NULL,
     -- 'user' or 'assistant'
     content TEXT NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    consolidated INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS tool_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,5 +24,6 @@ CREATE TABLE IF NOT EXISTS facts (
     embedding_id TEXT,
     -- links to ChromaDB entry, for Layer 2
     consolidated_date DATE DEFAULT CURRENT_DATE,
-    source_session_id TEXT
+    source_session_id TEXT,
+    synced_to_chroma INTEGER DEFAULT 0
 );

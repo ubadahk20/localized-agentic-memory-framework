@@ -61,3 +61,15 @@ def get_facts_prompt(transcript):
         f"Conversation transcript:\n---\n{transcript}\n---\n\n"
         "Facts:"
     )
+
+
+def get_remember_prompt(cleaned_input, retrieved_facts):
+    return (
+        f"Instruction: Answer the user's question using only the facts below, "
+        f"which are things you remember about this user from past conversations. "
+        f"Be direct and natural — don't mention 'the facts say' or reference this "
+        f"as a lookup, just answer as if you recalled it.\n\n"
+        f"Question: {cleaned_input}\n\n"
+        f"Remembered facts:\n---\n{retrieved_facts}\n---\n\n"
+        f"Answer:"
+    )

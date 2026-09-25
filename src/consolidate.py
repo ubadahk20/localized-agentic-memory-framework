@@ -5,7 +5,8 @@ import prompts
 import hashlib
 
 
-MODEL = "qwen2.5:1.5b"
+MODEL_FAST = "qwen2.5:1.5b"
+MODEL_EXTRACTION = "llama3.2:3b"
 """
 DB_PATH = "data/memory.db"
 
@@ -51,7 +52,7 @@ def format_rows_as_transcript(rows):
 
 def get_facts(transcript):
     prompt = prompts.get_facts_prompt(transcript)
-    facts = ollama.chat(model=MODEL, messages=[
+    facts = ollama.chat(model=MODEL_EXTRACTION, messages=[
                         {"role": "system", "content": prompt}])
     reply = facts['message']['content']
 

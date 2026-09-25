@@ -10,7 +10,7 @@ and semantic deduplication, running entirely on local consumer hardware.
 - [x] Module 2: Core chat loop with ephemeral buffer
 - [x] Module 3: Keyword routing (:search: / :remember:)
 - [x] Module 4: Memory consolidation
-- [ ] Module 5: Three-layer semantic deduplication
+- [x] Module 5: Three-layer semantic deduplication
 - [ ] Module 6: Testing & benchmarking
 
 ## Stack

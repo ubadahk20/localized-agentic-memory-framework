@@ -50,6 +50,13 @@ def check_similarity(collection, new_fact_test):
     return is_duplicate, matched_text, similarity
 
 
+def clear_synced_facts(conn):
+    # Delete rows from `facts` where synced_to_chroma = 1 —
+    conn.execute("DELETE FROM facts WHERE synced_to_chroma = 1")
+    conn.commit()
+    # they're safely persisted in Chroma now, no need to keep them in SQLite
+
+
 def trigger_deduplication(conn):
     str_ids, documents = get_new_facts(conn)
 
@@ -72,6 +79,8 @@ def trigger_deduplication(conn):
                 conn.execute(
                     "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (fact_id,))
                 conn.commit()
+                clear_synced_facts(conn)
+
     else:
         print("no new facts")
 
