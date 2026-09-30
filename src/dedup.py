@@ -1,5 +1,14 @@
 import chromadb
 import sqlite3
+import ollama
+import prompts
+
+MODEL = "llama3.2:3b"
+
+# Three-band thresholds — avoids burning an LLM call on every fact.
+# Only the ambiguous middle band gets real reasoning.
+AUTO_DUPLICATE = 0.90   # above this: confident enough to skip the LLM call
+AUTO_DISTINCT = 0.70    # below this: confident enough it's unrelated
 
 
 def get_chroma_collection():
@@ -13,7 +22,6 @@ collection = get_chroma_collection()
 
 
 def get_new_facts(conn):
-    documents = []
     rows = conn.execute(
         "SELECT id, fact_text FROM facts WHERE synced_to_chroma = 0").fetchall()
     str_ids = [str(row[0]) for row in rows]
@@ -21,68 +29,81 @@ def get_new_facts(conn):
     return str_ids, documents
 
 
-def sync_new_facts_to_chroma(conn, collection, str_ids, documents):
-
-    if str_ids != []:
-        collection.add(documents=documents, ids=str_ids)
-        for id in str_ids:
-            conn.execute(
-                "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (id,))
-        conn.commit()
-        return documents
-
-    else:
-
-        return None
-
-
-def check_similarity(collection, new_fact_test):
-    result = collection.query(
-        query_texts=[new_fact_test], n_results=1)
+def check_similarity(collection, new_fact_text):
+    """Returns (similarity, matched_text, matched_id) for the closest existing
+    fact, or (None, None, None) if the collection is empty."""
+    result = collection.query(query_texts=[new_fact_text], n_results=1)
     if not result["ids"][0]:
-        return False, None, None
-    distances = result["distances"][0]
-    closest_distance = distances[0]
+        return None, None, None
+    similarity = 1 - result["distances"][0][0]
     matched_text = result["documents"][0][0]
-    similarity = 1 - closest_distance
-    print(similarity)
-    is_duplicate = similarity >= 0.85
-    return is_duplicate, matched_text, similarity
+    matched_id = result["ids"][0][0]
+    return similarity, matched_text, matched_id
+
+
+def resolve_conflict(existing_fact, new_fact):
+    """Only called for the ambiguous middle band. Asks the LLM whether the
+    two facts are the same thing, an update/correction, or genuinely
+    different information."""
+    prompt = prompts.get_conflict_resolution_prompt(existing_fact, new_fact)
+    response = ollama.chat(model=MODEL, messages=[
+                           {"role": "user", "content": prompt}])
+    decision = response["message"]["content"].strip().upper()
+
+    if "DUPLICATE" in decision:
+        return "DUPLICATE"
+    elif "UPDATE" in decision:
+        return "UPDATE"
+    else:
+        return "DISTINCT"
 
 
 def clear_synced_facts(conn):
-    # Delete rows from `facts` where synced_to_chroma = 1 —
     conn.execute("DELETE FROM facts WHERE synced_to_chroma = 1")
     conn.commit()
-    # they're safely persisted in Chroma now, no need to keep them in SQLite
 
 
 def trigger_deduplication(conn):
     str_ids, documents = get_new_facts(conn)
 
-    if documents:
-        for fact_id, fact_text in zip(str_ids, documents):
-            # 1. Check similarity first against what's already in Chroma
-            is_dup, matched, score = check_similarity(collection, fact_text)
-
-            if is_dup:
-                print(
-                    f"Duplicate found! Skipping: '{fact_text}' (Matched: '{matched}', Score: {score})")
-            # Optionally mark it as synced or handled in SQLite so it doesn't keep pulling
-                conn.execute(
-                    "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (fact_id,))
-                conn.commit()
-            else:
-                print(f"Unique fact. Adding to Chroma: '{fact_text}'")
-            # Add them individually or collect unique ones to add in bulk
-                collection.add(documents=[fact_text], ids=[fact_id])
-                conn.execute(
-                    "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (fact_id,))
-                conn.commit()
-                clear_synced_facts(conn)
-
-    else:
+    if not documents:
         print("no new facts")
+        return
+
+    for fact_id, fact_text in zip(str_ids, documents):
+        similarity, matched_text, matched_id = check_similarity(
+            collection, fact_text)
+
+        if similarity is None:
+            # Empty collection — nothing to compare against, definitely new
+            decision = "DISTINCT"
+        elif similarity >= AUTO_DUPLICATE:
+            decision = "DUPLICATE"
+        elif similarity < AUTO_DISTINCT:
+            decision = "DISTINCT"
+        else:
+            # Ambiguous band — ask the LLM to actually reason about it
+            decision = resolve_conflict(matched_text, fact_text)
+            print(f"Ambiguous (sim={similarity:.3f}) — LLM decided: {decision} "
+                  f"| existing: '{matched_text}' | new: '{fact_text}'")
+
+        if decision == "DUPLICATE":
+            print(f"Duplicate. Skipping: '{fact_text}'")
+
+        elif decision == "UPDATE":
+            print(f"Update. Replacing '{matched_text}' with '{fact_text}'")
+            collection.delete(ids=[matched_id])
+            collection.add(documents=[fact_text], ids=[fact_id])
+
+        else:  # DISTINCT
+            print(f"New fact. Adding: '{fact_text}'")
+            collection.add(documents=[fact_text], ids=[fact_id])
+
+        conn.execute(
+            "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (fact_id,))
+        conn.commit()
+
+    clear_synced_facts(conn)
 
 
 if __name__ == "__main__":

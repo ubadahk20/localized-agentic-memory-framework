@@ -73,3 +73,19 @@ def get_remember_prompt(cleaned_input, retrieved_facts):
         f"Remembered facts:\n---\n{retrieved_facts}\n---\n\n"
         f"Answer:"
     )
+
+# Add this function to prompts.py
+
+
+def get_conflict_resolution_prompt(existing_fact, new_fact):
+    return (
+        "You are comparing two facts about the same user to decide how they relate.\n\n"
+        f"Existing fact: {existing_fact}\n"
+        f"New fact: {new_fact}\n\n"
+        "Decide exactly one of:\n"
+        "- DUPLICATE: these say the same thing, just worded differently\n"
+        "- UPDATE: the new fact changes or corrects the existing one "
+        "(e.g. a different age, date, status, or job)\n"
+        "- DISTINCT: these are genuinely different pieces of information about the user\n\n"
+        "Output ONLY one word: DUPLICATE, UPDATE, or DISTINCT. No explanation."
+    )
