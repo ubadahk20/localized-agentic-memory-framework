@@ -7,15 +7,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     consolidated INTEGER DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS tool_calls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    -- 'search' or 'remember'
-    query TEXT NOT NULL,
-    result TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-);
 CREATE TABLE IF NOT EXISTS facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fact_text TEXT NOT NULL,

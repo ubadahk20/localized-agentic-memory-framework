@@ -98,7 +98,7 @@ def handle_remember(cleaned_input):
     response = ollama.chat(model=MODEL_EXTRACTION, messages=[
                            {"role": "user", "content": prompt}])
     reply = response["message"]["content"]
-    return f"{reply}\n\n[Remembered: {retrieved_facts}]"
+    return f"{reply}"
 
 
 # handle_incognito() is a special handler that does not log the conversation to the database
