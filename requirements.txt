@@ -1,0 +1,5 @@
+streamlit
+chromadb
+ollama
+duckduckgo-search
+trafilatura
