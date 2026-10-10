@@ -1,110 +1,89 @@
-import chromadb
-import sqlite3
-import ollama
-import prompts
 
-MODEL = "llama3.2:3b"
-
-# Three-band thresholds — avoids burning an LLM call on every fact.
-# Only the ambiguous middle band gets real reasoning.
-AUTO_DUPLICATE = 0.90   # above this: confident enough to skip the LLM call
-AUTO_DISTINCT = 0.70    # below this: confident enough it's unrelated
+# prompts.py
 
 
-def get_chroma_collection():
-    client = chromadb.PersistentClient()
-    collection = client.get_or_create_collection(
-        name="main", metadata={"hnsw:space": "cosine"})
-    return collection
+def get_search_prompt(cleaned_input, formatted_result):
+    """Generates the prompt template for standard web searches."""
+    return (
+        f"Instruction: Answer the user's query using only the search results provided below. "
+        f"Be factual, direct, and concise. Do not guess or extrapolate if information is missing.\n\n"
+        f"Query: {cleaned_input}\n\n"
+        f"Search Results:\n---\n{formatted_result}\n---\n\n"
+        f"Answer:"
+    )
 
 
-collection = get_chroma_collection()
+def get_deepsearch_prompt(cleaned_input, formatted_result):
+    """Generates the prompt template for comprehensive web scrapes."""
+    return (
+        f"Instruction: Summarize the web scraping data below to answer the user's query. "
+        f"Provide only the TOP 5 most relevant items as a brief bulleted list. "
+        f"Do not repeat listings, and do not make up information.\n\n"
+        f"User Query: {cleaned_input}\n\n"
+        f"Data:\n====================\n{formatted_result}\n====================\n\n"
+        f"Top 5 Bulleted Summary:"
+    )
 
 
-def get_new_facts(conn):
-    rows = conn.execute(
-        "SELECT id, fact_text FROM facts WHERE synced_to_chroma = 0").fetchall()
-    str_ids = [str(row[0]) for row in rows]
-    documents = [row[1] for row in rows]
-    return str_ids, documents
+def get_incognito_prompt(cleaned_input):
+    """Generates the prompt template for stateless safe sessions."""
+    return (
+        f"System Instruction: You are operating in a completely stateless, local environment. "
+        f"Provide a highly direct, raw, and objective answer to the query below. "
+        f"Omit all conversational pleasantries, introductory remarks, and structural disclaimers. "
+        f"Focus entirely on the technical or factual details requested.\n\n"
+        f"Query: {cleaned_input}\n\n"
+        f"Answer:"
+    )
 
 
-def check_similarity(collection, new_fact_text):
-    """Returns (similarity, matched_text, matched_id) for the closest existing
-    fact, or (None, None, None) if the collection is empty."""
-    result = collection.query(query_texts=[new_fact_text], n_results=1)
-    if not result["ids"][0]:
-        return None, None, None
-    similarity = 1 - result["distances"][0][0]
-    matched_text = result["documents"][0][0]
-    matched_id = result["ids"][0][0]
-    return similarity, matched_text, matched_id
+def get_facts_prompt(transcript):
+    """Prompt template for fact generation"""
+
+    return (
+        "You are a memory extraction system. You will be given a conversation "
+        "transcript between a user and an AI assistant. Your only job is to extract "
+        "durable, genuinely useful facts about the user — things worth remembering "
+        "in future conversations.\n\n"
+        "STRICT RULES:\n"
+        "- IGNORE greetings, thank-yous, apologies, and small talk entirely.\n"
+        "- IGNORE the assistant explaining its own capabilities or limitations.\n"
+        "- IGNORE facts already obviously known or generic (e.g. 'the user said hi').\n"
+        "- ONLY extract facts that are specific to this user: preferences, personal "
+        "details, decisions, corrections, project details, or stated goals.\n"
+        "- Do NOT invent or infer anything not explicitly stated in the transcript.\n"
+        "- Each fact must be a single, standalone, atomic statement — one idea per fact.\n\n"
+        "OUTPUT FORMAT:\n"
+        "- Output ONLY a list of facts, one per line, each starting with '- '.\n"
+        "- Do NOT include any preamble, explanation, or numbering.\n"
+        "- If there are NO genuinely useful facts in this conversation, output exactly: NO_FACTS\n\n"
+        "- Facts must be about the USER, never about the assistant itself."
+        f"Conversation transcript:\n---\n{transcript}\n---\n\n"
+        "Facts:"
+    )
 
 
-def resolve_conflict(existing_fact, new_fact):
-    """Only called for the ambiguous middle band. Asks the LLM whether the
-    two facts are the same thing, an update/correction, or genuinely
-    different information."""
-    prompt = prompts.get_conflict_resolution_prompt(existing_fact, new_fact)
-    response = ollama.chat(model=MODEL, messages=[
-                           {"role": "user", "content": prompt}])
-    decision = response["message"]["content"].strip().upper()
-
-    if "DUPLICATE" in decision:
-        return "DUPLICATE"
-    elif "UPDATE" in decision:
-        return "UPDATE"
-    else:
-        return "DISTINCT"
+def get_remember_prompt(cleaned_input, retrieved_facts):
+    return (
+        f"Instruction: Answer the user's question using only the facts below, "
+        f"which are things you remember about this user from past conversations. "
+        f"Be direct and natural — don't mention 'the facts say' or reference this "
+        f"as a lookup, just answer as if you recalled it.\n\n"
+        f"Question: {cleaned_input}\n\n"
+        f"Remembered facts:\n---\n{retrieved_facts}\n---\n\n"
+        f"Answer:"
+    )
 
 
-def clear_synced_facts(conn):
-    conn.execute("DELETE FROM facts WHERE synced_to_chroma = 1")
-    conn.commit()
-
-
-def trigger_deduplication(conn):
-    str_ids, documents = get_new_facts(conn)
-
-    if not documents:
-        print("no new facts")
-        return
-
-    for fact_id, fact_text in zip(str_ids, documents):
-        similarity, matched_text, matched_id = check_similarity(
-            collection, fact_text)
-
-        if similarity is None:
-            # Empty collection — nothing to compare against, definitely new
-            decision = "DISTINCT"
-        elif similarity >= AUTO_DUPLICATE:
-            decision = "DUPLICATE"
-        elif similarity < AUTO_DISTINCT:
-            decision = "DISTINCT"
-        else:
-            # Ambiguous band — ask the LLM to actually reason about it
-            decision = resolve_conflict(matched_text, fact_text)
-            print(f"Ambiguous (sim={similarity:.3f}) — LLM decided: {decision} "
-                  f"| existing: '{matched_text}' | new: '{fact_text}'")
-
-        if decision == "DUPLICATE":
-            print(f"Duplicate. Skipping: '{fact_text}'")
-
-        elif decision == "UPDATE":
-            print(f"Update. Replacing '{matched_text}' with '{fact_text}'")
-            collection.delete(ids=[matched_id])
-            collection.add(documents=[fact_text], ids=[fact_id])
-
-        else:  # DISTINCT
-            print(f"New fact. Adding: '{fact_text}'")
-            collection.add(documents=[fact_text], ids=[fact_id])
-
-        conn.execute(
-            "UPDATE facts SET synced_to_chroma = 1 WHERE id = ?", (fact_id,))
-        conn.commit()
-
-    clear_synced_facts(conn)
-
-
-if __name__ == "__main__":
-    trigger_deduplication()
+def get_conflict_resolution_prompt(existing_fact, new_fact):
+    return (
+        "You are comparing two facts about the same user to decide how they relate.\n\n"
+        f"Existing fact: {existing_fact}\n"
+        f"New fact: {new_fact}\n\n"
+        "Decide exactly one of:\n"
+        "- DUPLICATE: these say the same thing, just worded differently\n"
+        "- UPDATE: the new fact changes or corrects the existing one "
+        "(e.g. a different age, date, status, or job)\n"
+        "- DISTINCT: these are genuinely different pieces of information about the user\n\n"
+        "Output ONLY one word: DUPLICATE, UPDATE, or DISTINCT. No explanation."
+    )
