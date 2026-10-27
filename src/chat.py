@@ -1,9 +1,11 @@
+import json
 import ollama
 import sqlite3
 import uuid
 import time
 from datetime import datetime
 import consolidate
+import prompts
 import router as rtr
 import dedup
 
@@ -63,6 +65,50 @@ def handle_chat(cleaned_input):
     return reply
 
 
+def plan_search_queries(user_query):
+    """Ask the model for focused web-search queries based on the user's request."""
+    prompt = prompts.get_query_planner_prompt(user_query)
+    response = ollama.chat(model=MODEL_EXTRACTION, messages=[
+        {"role": "user", "content": prompt}
+    ])
+    content = response["message"]["content"]
+
+    try:
+        plan = json.loads(content)
+    except json.JSONDecodeError as error:
+        raise ValueError("The model returned an invalid search plan.") from error
+
+    if not isinstance(plan, dict):
+        raise ValueError("The model search plan must be a JSON object.")
+
+    search_queries = plan.get("search_queries")
+    if not isinstance(search_queries, list) or not all(
+        isinstance(query, str) for query in search_queries
+    ):
+        raise ValueError("The model search plan must contain a list of search queries.")
+
+    search_queries = [query.strip() for query in search_queries if query.strip()]
+    if not search_queries:
+        raise ValueError("The model did not provide any usable search queries.")
+
+    return search_queries
+
+
+def process_search_query(user_query, deepsearch=False):
+    """Plan searches with the model, then send them to the selected DDGS handler."""
+    search_queries = plan_search_queries(user_query)
+    search_handler = rtr.handle_deepsearch if deepsearch else rtr.handle_search
+    return search_handler(user_query, search_queries=search_queries)
+
+
+def handle_search(cleaned_input):
+    return process_search_query(cleaned_input)
+
+
+def handle_deepsearch(cleaned_input):
+    return process_search_query(cleaned_input, deepsearch=True)
+
+
 # main() is the entry point for the chat application
 
 def main():
@@ -73,7 +119,7 @@ def main():
     # handlers is a dict that calls respective handler func
     # based on mode returned by route_message()
 
-    handlers = {"search": rtr.handle_search, "deepsearch": rtr.handle_deepsearch,
+    handlers = {"search": handle_search, "deepsearch": handle_deepsearch,
                 "remember": rtr.handle_remember, "incognito": rtr.handle_incognito, "chat": handle_chat}
 
     print("Warming up model...")

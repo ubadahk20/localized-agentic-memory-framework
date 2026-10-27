@@ -358,7 +358,7 @@ for i, (mode_key, mode_label) in enumerate(MODE_OPTIONS):
 with row_cols[-1]:
     if st.button("➜ Send", type="primary", use_container_width=True):
         submit_message(st.session_state.chat_input_box)
-        st.session_state.chat_input_box = ""
+        # st.session_state.chat_input_box = ""
         st.rerun()
 
 # -----------------------------

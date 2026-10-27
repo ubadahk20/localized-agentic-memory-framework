@@ -53,13 +53,24 @@ def _search_with_retry(query, max_results, attempts=2):
     raise last_error
 
 
-def handle_search(cleaned_input):
+def handle_search(cleaned_input, search_queries=None):
     cleaned_result = []
-    results = _search_with_retry(cleaned_input, max_results=10)
-    for r in results:
-        title = r["title"]
-        body = r["body"]
-        cleaned_result.append(f"{title}: {body}")
+    queries = search_queries or [cleaned_input]
+    seen_results = set()
+    for query in queries:
+        results = _search_with_retry(query, max_results=5)
+        for result in results:
+            result_id = result.get("href") or (
+                result.get("title"), result.get("body")
+            )
+            if result_id in seen_results:
+                continue
+            seen_results.add(result_id)
+            title = result["title"]
+            body = result["body"]
+            url = result.get("href", "")
+            source = f" ({url})" if url else ""
+            cleaned_result.append(f"{title}{source}: {body}")
     formatted_result = "\n".join(cleaned_result)
     prompt = prompts.get_search_prompt(cleaned_input, formatted_result)
     response = ollama.chat(model=MODEL_EXTRACTION, messages=[
@@ -68,16 +79,23 @@ def handle_search(cleaned_input):
     return reply
 
 
-def handle_deepsearch(cleaned_input):
+def handle_deepsearch(cleaned_input, search_queries=None):
     cleaned_result = []
-    results = _search_with_retry(cleaned_input, max_results=10)
-    for r in results:
-        url = r["href"]
-        downloaded = trafilatura.fetch_url(url)
-        result = trafilatura.extract(downloaded)
-        if result is not None:
-            shortened_text = result[:1000]
-            cleaned_result.append(f"{shortened_text}")
+    queries = search_queries or [cleaned_input]
+    seen_urls = set()
+    for query in queries:
+        results = _search_with_retry(query, max_results=10)
+        for result in results:
+            url = result["href"]
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            downloaded = trafilatura.fetch_url(url)
+            extracted = trafilatura.extract(downloaded)
+            if extracted is not None:
+                shortened_text = extracted[:1000]
+                title = result.get("title", "Untitled source")
+                cleaned_result.append(f"{title} ({url}): {shortened_text}")
     formatted_result = "\n".join(cleaned_result)
     prompt = prompts.get_deepsearch_prompt(cleaned_input, formatted_result)
     response = ollama.chat(model=MODEL_EXTRACTION, messages=[
@@ -107,13 +125,15 @@ def handle_remember(cleaned_input):
 def handle_incognito(cleaned_input):
     cleaned_result = []
 
-    with DDGS() as ddgs:
-        for r in ddgs.text(cleaned_input, max_results=10):
-            title = r["title"]
-            body = r["body"]
-            cleaned_result.append(f"{title}: {body}")
+    results = _search_with_retry(cleaned_input, max_results=10)
+    for result in results:
+        title = result["title"]
+        body = result["body"]
+        url = result.get("href", "")
+        source = f" ({url})" if url else ""
+        cleaned_result.append(f"{title}{source}: {body}")
     formatted_result = "\n".join(cleaned_result)
-    prompt = prompts.get_incognito_prompt(cleaned_input)
+    prompt = prompts.get_incognito_prompt(cleaned_input, formatted_result)
     response = ollama.chat(model=MODEL_EXTRACTION, messages=[{"role": "user",
                                                               "content": prompt}])
 
